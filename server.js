@@ -24,7 +24,7 @@ if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const db = new DatabaseSync(DATABASE_PATH);
-db.exec(\`
+db.exec(`
   PRAGMA foreign_keys = ON;
   PRAGMA journal_mode = WAL;
   PRAGMA busy_timeout = 3000;
@@ -65,28 +65,28 @@ db.exec(\`
     value TEXT NOT NULL
   ) STRICT;
   INSERT OR IGNORE INTO app_metadata (key, value) VALUES ('initialized', 'false');
-\`);
+`);
 
-const selectProducts = db.prepare(\`
+const selectProducts = db.prepare(`
   SELECT id, name, sku, category, cost, quantity, reorder_level AS reorderLevel,
          created_at AS createdAt, updated_at AS updatedAt
   FROM products ORDER BY created_at DESC, rowid DESC
-\`);
-const selectMovements = db.prepare(\`
+`);
+const selectMovements = db.prepare(`
   SELECT id, product_id AS productId, product_name AS productName, sku, type,
          delta, quantity_after AS quantityAfter, note, created_at AS createdAt
   FROM stock_movements ORDER BY created_at DESC, rowid DESC LIMIT ?
-\`);
-const insertProduct = db.prepare(\`
+`);
+const insertProduct = db.prepare(`
   INSERT INTO products
     (id, name, sku, category, cost, quantity, reorder_level, created_at, updated_at)
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-\`);
-const insertMovement = db.prepare(\`
+`);
+const insertMovement = db.prepare(`
   INSERT INTO stock_movements
     (id, product_id, product_name, sku, type, delta, quantity_after, note, created_at)
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-\`);
+`);
 const initializedStatement = db.prepare("SELECT value FROM app_metadata WHERE key = 'initialized'");
 const markInitialized = db.prepare("UPDATE app_metadata SET value = 'true' WHERE key = 'initialized'");
 
