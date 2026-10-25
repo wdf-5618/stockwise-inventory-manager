@@ -3,6 +3,9 @@
 // Stockwise is a front-end demo: all product data is local to this browser.
 // Keeping state in one array makes the summary counts and filtered list agree.
 const STORAGE_KEY = "stockwise.inventory.v1";
+const MOVEMENTS_KEY = "stockwise.movements.v1";
+const MAX_MOVEMENTS = 500;
+const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 const MAX_QUANTITY = 999999999;
 const MAX_COST = 999999999;
 const CATEGORIES = ["Stationery", "Groceries", "Electronics", "Clothing", "Household", "Other"];
@@ -40,10 +43,18 @@ const el = {
   inventoryFooter: document.querySelector("#inventory-footer"),
   todayLabel: document.querySelector("#today-label"),
   exportButton: document.querySelector("#export-button"),
+  importButton: document.querySelector("#import-button"),
+  importFile: document.querySelector("#import-file"),
+  exportHistoryButton: document.querySelector("#export-history"),
+  movementList: document.querySelector("#movement-list"),
+  movementEmpty: document.querySelector("#movement-empty"),
+  movementCount: document.querySelector("#movement-count"),
+  movementFooter: document.querySelector("#movement-footer"),
   toast: document.querySelector("#toast")
 };
 
 let products = loadProducts();
+let movements = loadMovements();
 let activeFilter = "all";
 let editingId = null;
 let toastTimer = null;
@@ -97,6 +108,81 @@ function loadProducts() {
   }
 }
 
+
+function normalizeMovement(record) {
+  if (!isPlainObject(record) || typeof record.id !== "string") return null;
+  if (typeof record.productName !== "string") return null;
+  const delta = Number(record.delta);
+  const quantityAfter = Number(record.quantityAfter);
+  if (!Number.isSafeInteger(delta) || !Number.isSafeInteger(quantityAfter) || quantityAfter < 0) return null;
+
+  return {
+    id: record.id,
+    productId: typeof record.productId === "string" ? record.productId : "",
+    productName: record.productName.slice(0, 100),
+    sku: typeof record.sku === "string" ? record.sku.slice(0, 40) : "",
+    type: typeof record.type === "string" ? record.type.slice(0, 60) : "Stock change",
+    delta,
+    quantityAfter,
+    note: typeof record.note === "string" ? record.note.slice(0, 180) : "",
+    createdAt: Number.isFinite(record.createdAt) ? record.createdAt : Date.now()
+  };
+}
+
+function loadMovements() {
+  try {
+    const saved = localStorage.getItem(MOVEMENTS_KEY);
+    if (saved !== null) {
+      const parsed = JSON.parse(saved);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.map(normalizeMovement).filter(Boolean)
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .slice(0, MAX_MOVEMENTS);
+    }
+
+    // We cannot reconstruct movements from before this feature existed. Start
+    // an honest history using each product's current quantity as its opening balance.
+    const now = Date.now();
+    const openingMovements = products.map((product) => ({
+      id: createId(),
+      productId: product.id,
+      productName: product.name,
+      sku: product.sku,
+      type: "Opening balance",
+      delta: product.quantity,
+      quantityAfter: product.quantity,
+      note: "History started from the current catalog; older movements are unavailable.",
+      createdAt: product.createdAt || now
+    })).sort((a, b) => b.createdAt - a.createdAt).slice(0, MAX_MOVEMENTS);
+
+    localStorage.setItem(MOVEMENTS_KEY, JSON.stringify(openingMovements));
+    return openingMovements;
+  } catch (error) {
+    console.warn("Could not read or initialize stock movement history.", error);
+    return products.map((product) => ({
+      id: createId(),
+      productId: product.id,
+      productName: product.name,
+      sku: product.sku,
+      type: "Opening balance",
+      delta: product.quantity,
+      quantityAfter: product.quantity,
+      note: "History started from the current catalog; older movements are unavailable.",
+      createdAt: product.createdAt || Date.now()
+    })).slice(0, MAX_MOVEMENTS);
+  }
+}
+
+function saveMovements() {
+  try {
+    localStorage.setItem(MOVEMENTS_KEY, JSON.stringify(movements.slice(0, MAX_MOVEMENTS)));
+    return true;
+  } catch (error) {
+    console.warn("Could not save stock movement history.", error);
+    return false;
+  }
+}
+
 function saveProducts() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(products));
@@ -107,6 +193,29 @@ function saveProducts() {
     console.warn("Could not save the inventory in this browser.", error);
     return false;
   }
+}
+
+
+function saveState() {
+  // Save each record set independently so one failed write does not short-circuit the other.
+  const productsSaved = saveProducts();
+  const movementsSaved = saveMovements();
+  return productsSaved && movementsSaved;
+}
+
+function recordMovement(product, delta, quantityAfter, type, note) {
+  movements.unshift({
+    id: createId(),
+    productId: product.id,
+    productName: product.name,
+    sku: product.sku || "",
+    type,
+    delta,
+    quantityAfter,
+    note: note || "",
+    createdAt: Date.now()
+  });
+  movements = movements.slice(0, MAX_MOVEMENTS);
 }
 
 function createId() {
@@ -241,6 +350,58 @@ function productCard(product) {
   return item;
 }
 
+
+function formatMovementTime(timestamp) {
+  return new Date(timestamp).toLocaleString(undefined, {
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit"
+  });
+}
+
+function movementCard(movement) {
+  const row = makeElement("article", "movement-row");
+  const marker = makeElement("span", "movement-marker", movement.delta > 0 ? "＋" : movement.delta < 0 ? "−" : "•");
+  marker.setAttribute("aria-hidden", "true");
+
+  const main = makeElement("div", "movement-main");
+  const titleRow = makeElement("div", "movement-title-row");
+  titleRow.append(makeElement("h3", "movement-product", movement.productName));
+  titleRow.append(makeElement("span", "movement-type", movement.type));
+  main.append(titleRow);
+
+  const metadata = makeElement("p", "movement-meta");
+  const details = [movement.sku, formatMovementTime(movement.createdAt), movement.note].filter(Boolean);
+  metadata.textContent = details.join(" · ");
+  main.append(metadata);
+
+  const values = makeElement("div", "movement-values");
+  const deltaText = movement.delta > 0
+    ? "+" + formatCount(movement.delta)
+    : movement.delta < 0 ? "−" + formatCount(Math.abs(movement.delta)) : "0";
+  values.append(makeElement(
+    "strong",
+    "movement-delta " + (movement.delta > 0 ? "positive" : movement.delta < 0 ? "negative" : "neutral"),
+    deltaText
+  ));
+  values.append(makeElement("span", "movement-balance", "Balance " + formatCount(movement.quantityAfter)));
+
+  row.append(marker, main, values);
+  return row;
+}
+
+function renderMovementHistory() {
+  const recent = [...movements].sort((a, b) => b.createdAt - a.createdAt).slice(0, 8);
+  el.movementCount.textContent = formatCount(movements.length);
+  el.movementList.replaceChildren(...recent.map(movementCard));
+  el.movementEmpty.hidden = recent.length > 0;
+
+  if (movements.length === 0) {
+    el.movementFooter.textContent = "Stock activity will appear here.";
+  } else {
+    el.movementFooter.textContent = "Showing the latest " + recent.length +
+      " of " + movements.length + " recorded movements. History is kept in this browser.";
+  }
+}
+
 function render() {
   const visible = getVisibleProducts();
   const units = products.reduce((sum, product) => sum + product.quantity, 0);
@@ -284,6 +445,7 @@ function render() {
   } else {
     el.inventoryFooter.textContent = "All products are above their low-stock thresholds.";
   }
+  renderMovementHistory();
 }
 
 function setFormMode(isEditing) {
@@ -383,24 +545,36 @@ function handleSubmit(event) {
       render();
       return;
     }
+    const previousQuantity = current.quantity;
     Object.assign(current, result.product, { updatedAt: now });
-    const saved = saveProducts();
+    if (current.quantity !== previousQuantity) {
+      recordMovement(
+        current,
+        current.quantity - previousQuantity,
+        current.quantity,
+        "Manual correction",
+        "Quantity changed in the product edit form"
+      );
+    }
+    const saved = saveState();
     resetForm();
     render();
-    showToast(saved ? "Product updated." : "Updated on screen, but the browser could not save the change.");
+    showToast(saved ? "Product updated." : "Updated on screen, but the browser could not save all changes.");
     return;
   }
 
-  products.unshift({
+  const product = {
     id: createId(),
     ...result.product,
     createdAt: now,
     updatedAt: now
-  });
-  const saved = saveProducts();
+  };
+  products.unshift(product);
+  recordMovement(product, product.quantity, product.quantity, "Opening balance", "Product added to the catalog");
+  const saved = saveState();
   resetForm();
   render();
-  showToast(saved ? "Product added to inventory." : "Added on screen, but the browser could not save the change.");
+  showToast(saved ? "Product added to inventory." : "Added on screen, but the browser could not save all changes.");
   el.name.focus();
 }
 
@@ -412,11 +586,18 @@ function adjustStock(id, change) {
 
   product.quantity = next;
   product.updatedAt = Date.now();
-  const saved = saveProducts();
+  recordMovement(
+    product,
+    change,
+    next,
+    change > 0 ? "Stock increase" : "Stock decrease",
+    "Manual one-unit adjustment"
+  );
+  const saved = saveState();
   render();
   showToast(saved
     ? product.name + " now has " + formatCount(product.quantity) + " units."
-    : "Stock changed on screen, but the browser could not save the change.");
+    : "Stock changed on screen, but the browser could not save all changes.");
 }
 
 function deleteProduct(id) {
@@ -424,17 +605,26 @@ function deleteProduct(id) {
   if (!product) return;
   if (!window.confirm('Delete "' + product.name + '" from this inventory? This cannot be undone.')) return;
 
+  recordMovement(
+    product,
+    -product.quantity,
+    0,
+    "Product removed",
+    "Deleted from active catalog; previous movements remain in history"
+  );
   products = products.filter((item) => item.id !== id);
   if (editingId === id) resetForm();
-  const saved = saveProducts();
+  const saved = saveState();
   render();
-  showToast(saved ? "Product deleted." : "Product deleted on screen, but the browser could not save the change.");
+  showToast(saved ? "Product deleted." : "Product deleted on screen, but the browser could not save all changes.");
 }
 
 function csvCell(value) {
-  // Quoting every field prevents commas, quotes, or line breaks in names from
-  // shifting the exported CSV columns.
-  return '"' + String(value ?? "").replace(/"/g, '""') + '"';
+  // Quote every cell and escape embedded quotes. Also neutralize text that spreadsheet
+  // software could otherwise interpret as a formula after opening the CSV.
+  let text = String(value ?? "");
+  if (typeof value === "string" && /^[=+\\-@\\t\\r]/.test(text)) text = "'" + text;
+  return '"' + text.replace(/"/g, '""') + '"';
 }
 
 function exportCsv() {
@@ -470,6 +660,219 @@ function exportCsv() {
   showToast("CSV export created.");
 }
 
+
+function exportMovementHistory() {
+  if (movements.length === 0) {
+    showToast("There is no stock history to export yet.");
+    return;
+  }
+  const headers = [
+    "timestamp", "product_name", "sku", "action", "quantity_change",
+    "quantity_after", "note"
+  ];
+  const rows = [...movements]
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .map((movement) => [
+      new Date(movement.createdAt).toISOString(),
+      movement.productName,
+      movement.sku,
+      movement.type,
+      movement.delta,
+      movement.quantityAfter,
+      movement.note
+    ]);
+  const csv = "\\uFEFF" + [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\\r\\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "stockwise-movement-history.csv";
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  showToast("Stock movement history exported.");
+}
+
+
+function parseCsvRows(source) {
+  const text = source.replace(/^\\uFEFF/, "");
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === '"') {
+      if (inQuotes && text[index + 1] === '"') {
+        cell += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === "," && !inQuotes) {
+      row.push(cell);
+      cell = "";
+    } else if ((char === "\\n" || char === "\\r") && !inQuotes) {
+      if (char === "\\r" && text[index + 1] === "\\n") index += 1;
+      row.push(cell);
+      if (row.some((value) => value.trim() !== "")) rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+  if (inQuotes) throw new Error("The CSV contains an unmatched quotation mark.");
+  row.push(cell);
+  if (row.some((value) => value.trim() !== "")) rows.push(row);
+  return rows;
+}
+
+function csvImportField(row, positions, ...names) {
+  for (const name of names) {
+    const position = positions.get(name);
+    if (position !== undefined) return String(row[position] ?? "").trim();
+  }
+  return "";
+}
+
+function prepareCsvImport(source) {
+  const rows = parseCsvRows(source);
+  if (rows.length < 2) throw new Error("The CSV needs a header row and at least one product row.");
+
+  const headers = rows[0].map((header) =>
+    header.trim().toLocaleLowerCase().replace(/\\s+/g, "_").replace(/-/g, "_")
+  );
+  const positions = new Map(headers.map((header, index) => [header, index]));
+  if (!positions.has("product_name") && !positions.has("name")) {
+    throw new Error("Could not find a product_name or name column.");
+  }
+  if (!positions.has("quantity")) throw new Error("Could not find a quantity column.");
+  if (!positions.has("unit_cost_mmk") && !positions.has("unit_cost") && !positions.has("cost")) {
+    throw new Error("Could not find a unit_cost_mmk, unit_cost, or cost column.");
+  }
+
+  const staged = [];
+  const seenIdentities = new Set();
+  let invalid = 0;
+
+  for (const row of rows.slice(1)) {
+    const name = csvImportField(row, positions, "product_name", "name").slice(0, 100);
+    const sku = csvImportField(row, positions, "sku", "code").slice(0, 40);
+    const categoryValue = csvImportField(row, positions, "category");
+    const category = CATEGORIES.find((item) => item.toLocaleLowerCase() === categoryValue.toLocaleLowerCase()) || "Other";
+    const costRaw = csvImportField(row, positions, "unit_cost_mmk", "unit_cost", "cost");
+    const quantityRaw = csvImportField(row, positions, "quantity");
+    const reorderRaw = csvImportField(row, positions, "low_stock_threshold", "reorder_level", "reorderlevel");
+    const cost = Number(costRaw);
+    const quantity = Number(quantityRaw);
+    const reorderLevel = reorderRaw === "" ? 5 : Number(reorderRaw);
+
+    if (!name || costRaw === "" || quantityRaw === "" ||
+        !Number.isFinite(cost) || cost < 0 || cost > MAX_COST ||
+        !Number.isSafeInteger(quantity) || quantity < 0 || quantity > MAX_QUANTITY ||
+        !Number.isSafeInteger(reorderLevel) || reorderLevel < 0 || reorderLevel > MAX_QUANTITY) {
+      invalid += 1;
+      continue;
+    }
+
+    const identity = sku
+      ? "sku:" + sku.toLocaleLowerCase()
+      : "name:" + name.toLocaleLowerCase() + "|category:" + category.toLocaleLowerCase();
+    if (seenIdentities.has(identity)) {
+      invalid += 1;
+      continue;
+    }
+    seenIdentities.add(identity);
+
+    const existing = products.find((product) => sku
+      ? product.sku && product.sku.toLocaleLowerCase() === sku.toLocaleLowerCase()
+      : !product.sku && product.name.toLocaleLowerCase() === name.toLocaleLowerCase() && product.category === category
+    ) || null;
+
+    staged.push({
+      existingId: existing ? existing.id : null,
+      product: { name, sku, category, cost, quantity, reorderLevel }
+    });
+  }
+  return { staged, invalid, rowsRead: rows.length - 1 };
+}
+
+async function handleCsvImport() {
+  const file = el.importFile.files && el.importFile.files[0];
+  el.importFile.value = "";
+  if (!file) return;
+  if (!file.name.toLocaleLowerCase().endsWith(".csv") && file.type !== "text/csv") {
+    showToast("Please choose a .csv file.");
+    return;
+  }
+  if (file.size > MAX_IMPORT_BYTES) {
+    showToast("CSV file is too large. The maximum size is 5 MB.");
+    return;
+  }
+
+  try {
+    const prepared = prepareCsvImport(await file.text());
+    if (prepared.staged.length === 0) {
+      showToast("No valid product rows were found. " + prepared.invalid + " row(s) skipped.");
+      return;
+    }
+
+    const newCount = prepared.staged.filter((entry) => !entry.existingId).length;
+    const updateCount = prepared.staged.length - newCount;
+    const message = "Import summary\\n\\n" +
+      "New products: " + newCount + "\\n" +
+      "Update existing products: " + updateCount + "\\n" +
+      "Invalid/duplicate rows skipped: " + prepared.invalid + "\\n\\n" +
+      "Continue? Existing products with a matching SKU (or name/category when SKU is blank) will be updated.";
+    if (!window.confirm(message)) return;
+
+    let added = 0;
+    let updated = 0;
+    const now = Date.now();
+
+    for (const entry of prepared.staged) {
+      if (entry.existingId) {
+        const existing = products.find((product) => product.id === entry.existingId);
+        if (!existing) continue;
+        const previousQuantity = existing.quantity;
+        Object.assign(existing, entry.product, { updatedAt: now });
+        if (existing.quantity !== previousQuantity) {
+          recordMovement(
+            existing,
+            existing.quantity - previousQuantity,
+            existing.quantity,
+            "CSV import adjustment",
+            "Quantity updated from " + file.name
+          );
+        }
+        updated += 1;
+      } else {
+        const product = {
+          id: createId(),
+          ...entry.product,
+          createdAt: now,
+          updatedAt: now
+        };
+        products.unshift(product);
+        recordMovement(product, product.quantity, product.quantity, "CSV import opening balance", "Imported from " + file.name);
+        added += 1;
+      }
+    }
+
+    const saved = saveState();
+    render();
+    showToast(saved
+      ? "Import complete: " + added + " added, " + updated + " updated, " + prepared.invalid + " skipped."
+      : "Import applied on screen, but the browser could not save all changes.");
+  } catch (error) {
+    console.warn("Could not import inventory CSV.", error);
+    showToast(error instanceof Error ? error.message : "Could not read this CSV file.");
+  }
+}
+
 function showToast(message) {
   el.toast.textContent = message;
   el.toast.classList.add("is-visible");
@@ -498,6 +901,9 @@ el.filterButtons.forEach((button) => {
   });
 });
 el.exportButton.addEventListener("click", exportCsv);
+el.importButton.addEventListener("click", () => el.importFile.click());
+el.importFile.addEventListener("change", handleCsvImport);
+el.exportHistoryButton.addEventListener("click", exportMovementHistory);
 el.emptyAction.addEventListener("click", () => {
   if (products.length === 0) {
     el.name.focus();
