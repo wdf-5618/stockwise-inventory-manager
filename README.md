@@ -1,52 +1,52 @@
 # Stockwise — Small-Shop Inventory Manager
 
-Stockwise is a standalone browser app for a small shop to keep a simple product catalog, monitor quantities, identify low stock, and export inventory snapshots. It is built with HTML, CSS, and vanilla JavaScript.
+Stockwise is a small-shop inventory app built with HTML, CSS, and vanilla JavaScript. It helps a shop keep a product catalog, review stock levels, record stock movements, and exchange inventory data through CSV.
 
 ## Features
 
-- Create, edit, and delete products with a name, optional SKU, category, unit cost in Myanmar kyat (MMK), quantity, and low-stock threshold.
-- Adjust stock quantities and record the reason and resulting balance in a movement history.
-- Review the latest stock changes and export the audit history as CSV.
-- Import product catalogs from CSV, with validation and a confirmation summary before applying changes.
-- Update an existing product by matching its SKU; when the SKU is blank, matching uses product name and category.
-- Summary metrics for product count, total units, estimated stock value, and items needing attention.
-- Search by product name, SKU, or category; filter by stock status/category; sort by name, quantity, value, or date.
-- Export the current product catalog to CSV.
-- Persist products and movement history in this browser using `localStorage`.
-- Load fictional sample products on the first visit.
+- Create, edit, and delete products with name, optional SKU, category, cost in Myanmar kyat (MMK), quantity, and low-stock threshold.
+- Adjust quantities and flag low-stock or out-of-stock items.
+- Search, filter, sort, and review inventory summaries.
+- Import and export product CSV files, with field validation and duplicate checks.
+- Keep a stock movement log and export that history separately.
+- Preserve a browser-local copy for static/offline use.
+- When started with the local server, sync the catalog and movement history to a SQLite database file using a transaction.
 
-## Run locally
+## Run with SQLite persistence
 
-Open `index.html` directly, or start a server from the repository root:
+1. Install Node.js 22.13 or later.
+2. In this repository directory, run:
 
-```bash
-python -m http.server 8000
-```
+   ```sh
+   npm start
+   ```
 
-Then visit [http://localhost:8000/](http://localhost:8000/).
+3. Open [http://127.0.0.1:4173](http://127.0.0.1:4173).
 
-## Files
+The first run creates `data/stockwise.sqlite` automatically and migrates the current browser catalog into the database if the database has not been initialized yet. When an initialized database already exists, its records replace the local browser copy. The header indicates whether SQLite mode is active.
 
-- `index.html` — page structure, catalog controls, CSV import/export, and movement history.
-- `styles.css` — responsive layout, stock status indicators, and movement styles.
-- `app.js` — product state, persistence, validation, movements, CSV parsing/import, filtering, sorting, and exports.
+The server uses Node's built-in `node:sqlite` API and no third-party npm packages. Run `npm run check` for JavaScript syntax checks.
 
-## Implementation choices
+## Browser-only mode
 
-- One product array is the source of truth for the catalog and summary metrics.
-- Stock movements are snapshots that preserve the product name/SKU, change amount, resulting quantity, action, note, and timestamp.
-- The movement history is capped at 500 records to keep local storage bounded.
-- This version cannot reconstruct movements that happened before history tracking was added. Existing quantities are recorded as opening balances, with that limitation stated in each note.
-- CSV import validates rows and duplicate identities before asking for confirmation; invalid rows are skipped rather than silently accepted.
-- SKU codes are unique when supplied in the product form.
-- User-entered text is rendered through `textContent`, not interpreted as HTML.
-- CSV values are quoted and embedded quotes are escaped; text that resembles spreadsheet formulas is prefixed defensively.
-- The interface reports when browser storage writes fail.
+Opening `index.html` directly or hosting the static files without this API keeps data in that browser's localStorage. Browser-only records are not automatically shared with the SQLite service until the app is opened through the server for the first time.
 
-## Limitations
+## Data and security notes
 
-This is a front-end learning prototype, not a production inventory system. It has no account, shared database, supplier records, purchase orders, sales integration, or multi-device synchronization. Products and movement history remain in the current browser profile. Clearing site data may remove them. Export both the product catalog and movement history if you need separate backups. Stock value is a simple estimate based on the entered unit cost.
+- This is a local, single-user portfolio/demo application. The server binds to `127.0.0.1` by default and does not provide accounts, authentication, multi-user access, or remote-hosting security.
+- The API validates input, uses SQL constraints and prepared statements, and replaces a snapshot inside one SQLite transaction.
+- The database file and its write-ahead-log files are ignored by Git. Back up `data/stockwise.sqlite` separately if you use real data.
+- CSV imports can only record changes made after the movement-history feature began; older movements cannot be reconstructed.
+- Demo products are fictional and are intended only to make the first visit understandable.
 
-## Future improvements
+## Project structure
 
-A database-backed version could store products and movements in relational tables, enforce stock updates transactionally, add authenticated access, and maintain per-business authorization policies.
+- `index.html` — app structure
+- `styles.css` — responsive visual system
+- `app.js` — inventory interactions, CSV tools, browser fallback, API sync
+- `server.js` — local HTTP server and JSON API
+- `package.json` — start and syntax-check scripts
+
+## Future work
+
+The current API syncs a validated full-state snapshot. A production multi-user system would use authenticated users, per-record CRUD endpoints, server-enforced access controls, and stock-movement writes that are atomic with each quantity adjustment.

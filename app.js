@@ -1,6 +1,6 @@
 "use strict";
 
-// Stockwise is a front-end demo: all product data is local to this browser.
+// Stockwise keeps a local browser copy and syncs snapshots to SQLite when served by server.js.
 // Keeping state in one array makes the summary counts and filtered list agree.
 const STORAGE_KEY = "stockwise.inventory.v1";
 const MOVEMENTS_KEY = "stockwise.movements.v1";
@@ -50,7 +50,8 @@ const el = {
   movementEmpty: document.querySelector("#movement-empty"),
   movementCount: document.querySelector("#movement-count"),
   movementFooter: document.querySelector("#movement-footer"),
-  toast: document.querySelector("#toast")
+  toast: document.querySelector("#toast"),
+  storageLabel: document.querySelector("#storage-label")
 };
 
 let products = loadProducts();
@@ -58,6 +59,8 @@ let movements = loadMovements();
 let activeFilter = "all";
 let editingId = null;
 let toastTimer = null;
+let serverReady = false;
+let serverSyncQueue = Promise.resolve();
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -197,10 +200,64 @@ function saveProducts() {
 
 
 function saveState() {
-  // Save each record set independently so one failed write does not short-circuit the other.
+  // Keep the browser copy available for static hosting/offline use.
   const productsSaved = saveProducts();
   const movementsSaved = saveMovements();
+  if (serverReady) queueServerSnapshot();
   return productsSaved && movementsSaved;
+}
+
+function queueServerSnapshot() {
+  // Serialize full snapshots in order so quick edits cannot overtake earlier requests.
+  const snapshot = JSON.stringify({ products, movements: movements.slice(0, MAX_MOVEMENTS) });
+  serverSyncQueue = serverSyncQueue.then(async () => {
+    const response = await fetch("/api/state", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: snapshot
+    });
+    if (!response.ok) throw new Error("SQLite server returned HTTP " + response.status);
+    if (el.storageLabel) el.storageLabel.textContent = "Saved to local SQLite database";
+  }).catch((error) => {
+    if (el.storageLabel) el.storageLabel.textContent = "Saved on this device · server sync unavailable";
+    console.warn("Stockwise kept the browser copy, but could not sync SQLite.", error);
+    showToast("Saved in this browser, but SQLite sync failed. Check the local server.");
+  });
+}
+
+async function initializeServerSync() {
+  // Opening index.html directly or on static hosting intentionally keeps localStorage mode.
+  if (!["http:", "https:"].includes(window.location.protocol)) return;
+  try {
+    const response = await fetch("/api/state", { headers: { "Accept": "application/json" } });
+    if (!response.ok) return;
+    const snapshot = await response.json();
+    if (snapshot.initialized) {
+      products = Array.isArray(snapshot.products)
+        ? snapshot.products.map(normalizedProduct).filter((product) => product && product.name)
+        : [];
+      movements = Array.isArray(snapshot.movements)
+        ? snapshot.movements.map(normalizeMovement).filter(Boolean)
+            .sort((a, b) => b.createdAt - a.createdAt).slice(0, MAX_MOVEMENTS)
+        : [];
+      saveProducts();
+      saveMovements();
+    } else {
+      const migration = await fetch("/api/state", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ products, movements: movements.slice(0, MAX_MOVEMENTS) })
+      });
+      if (!migration.ok) throw new Error("Initial SQLite migration returned HTTP " + migration.status);
+    }
+    serverReady = true;
+    if (el.storageLabel) el.storageLabel.textContent = "Saved to local SQLite database";
+    render();
+  } catch (error) {
+    // The app remains usable with its local browser copy if the API is unavailable.
+    if (el.storageLabel) el.storageLabel.textContent = "Saved on this device";
+    console.info("Stockwise is using browser-only storage.", error);
+  }
 }
 
 function recordMovement(product, delta, quantityAfter, type, note) {
@@ -936,3 +993,4 @@ document.addEventListener("keydown", (event) => {
 
 updateDateLabel();
 render();
+void initializeServerSync();
