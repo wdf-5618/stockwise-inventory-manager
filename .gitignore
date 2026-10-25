@@ -1,0 +1,10 @@
+# Local SQLite database and journaling files
+data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Environment files and dependencies
+.env
+.env.*
+node_modules/
