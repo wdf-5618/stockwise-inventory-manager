@@ -623,7 +623,10 @@ function csvCell(value) {
   // Quote every cell and escape embedded quotes. Also neutralize text that spreadsheet
   // software could otherwise interpret as a formula after opening the CSV.
   let text = String(value ?? "");
-  if (typeof value === "string" && /^[=+\\-@\\t\\r]/.test(text)) text = "'" + text;
+  const firstCharacter = text.charAt(0);
+  if (typeof value === "string" && ["=", "+", "-", "@", String.fromCharCode(9), String.fromCharCode(13)].includes(firstCharacter)) {
+    text = "'" + text;
+  }
   return '"' + text.replace(/"/g, '""') + '"';
 }
 
@@ -681,7 +684,7 @@ function exportMovementHistory() {
       movement.quantityAfter,
       movement.note
     ]);
-  const csv = "\\uFEFF" + [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\\r\\n");
+  const csv = String.fromCharCode(0xFEFF) + [headers, ...rows].map((row) => row.map(csvCell).join(",")).join(String.fromCharCode(13, 10));
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -696,7 +699,7 @@ function exportMovementHistory() {
 
 
 function parseCsvRows(source) {
-  const text = source.replace(/^\\uFEFF/, "");
+  const text = source.charCodeAt(0) === 0xFEFF ? source.slice(1) : source;
   const rows = [];
   let row = [];
   let cell = "";
@@ -714,8 +717,8 @@ function parseCsvRows(source) {
     } else if (char === "," && !inQuotes) {
       row.push(cell);
       cell = "";
-    } else if ((char === "\\n" || char === "\\r") && !inQuotes) {
-      if (char === "\\r" && text[index + 1] === "\\n") index += 1;
+    } else if ((char.charCodeAt(0) === 10 || char.charCodeAt(0) === 13) && !inQuotes) {
+      if (char.charCodeAt(0) === 13 && text.charCodeAt(index + 1) === 10) index += 1;
       row.push(cell);
       if (row.some((value) => value.trim() !== "")) rows.push(row);
       row = [];
@@ -743,7 +746,7 @@ function prepareCsvImport(source) {
   if (rows.length < 2) throw new Error("The CSV needs a header row and at least one product row.");
 
   const headers = rows[0].map((header) =>
-    header.trim().toLocaleLowerCase().replace(/\\s+/g, "_").replace(/-/g, "_")
+    header.trim().toLocaleLowerCase().replaceAll(" ", "_").replaceAll("-", "_")
   );
   const positions = new Map(headers.map((header, index) => [header, index]));
   if (!positions.has("product_name") && !positions.has("name")) {
