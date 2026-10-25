@@ -18,7 +18,9 @@
     </a>
     <div class="header-right">
       <span class="local-status"><span class="status-dot" aria-hidden="true"></span> Saved on this device</span>
-      <button type="button" class="button button-export" id="export-button"><span aria-hidden="true">↧</span> Export CSV</button>
+      <input class="visually-hidden" type="file" id="import-file" accept=".csv,text/csv" aria-label="Choose inventory CSV file">
+      <button type="button" class="button button-export" id="import-button"><span aria-hidden="true">↥</span> Import CSV</button>
+      <button type="button" class="button button-export" id="export-button"><span aria-hidden="true">↧</span> Export products</button>
     </div>
   </header>
 
@@ -172,6 +174,22 @@
         </div>
         <p class="inventory-footer" id="inventory-footer">Your catalog is ready when you are.</p>
       </section>
+    </section>
+
+    <section class="movement-panel" aria-labelledby="movement-heading">
+      <div class="movement-heading-row">
+        <div>
+          <span class="section-kicker">AUDIT TRAIL</span>
+          <h2 id="movement-heading">Recent stock movements <span class="heading-count" id="movement-count">0</span></h2>
+          <p class="movement-intro">A record of quantity changes, including the reason and balance after each change.</p>
+        </div>
+        <button type="button" class="button button-secondary" id="export-history"><span aria-hidden="true">↧</span> Export history</button>
+      </div>
+      <div class="movement-list" id="movement-list" aria-label="Stock movement history"></div>
+      <div class="movement-empty" id="movement-empty" hidden>
+        <p>No stock movements recorded yet.</p>
+      </div>
+      <p class="movement-footer" id="movement-footer">Stock activity will appear here.</p>
     </section>
 
     <section class="stock-note" aria-label="How stock status works">
