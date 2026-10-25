@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f8f5">
+  <meta name="description" content="Stockwise is a simple inventory manager for small shops. Track products, stock levels, and inventory value.">
+  <title>Stockwise — Small Shop Inventory</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to inventory</a>
+  <header class="site-header">
+    <a class="brand" href="https://github.com/wdf-5618/developer-portfolio" target="_blank" rel="noreferrer" aria-label="Back to developer portfolio">
+      <span class="brand-mark" aria-hidden="true">S</span>
+      <span>stockwise<span class="brand-period">.</span></span>
+    </a>
+    <div class="header-right">
+      <span class="local-status"><span class="status-dot" aria-hidden="true"></span> Saved on this device</span>
+      <button type="button" class="button button-export" id="export-button"><span aria-hidden="true">↧</span> Export CSV</button>
+    </div>
+  </header>
+
+  <main id="main-content" class="app-shell">
+    <section class="welcome-row">
+      <div>
+        <p class="eyebrow" id="today-label">STOCK CONTROL, MADE SIMPLE</p>
+        <h1>Know what’s<br><span>on your shelves.</span></h1>
+        <p class="intro">A lightweight inventory workspace for keeping products organized and stock levels in view.</p>
+      </div>
+      <div class="welcome-graphic" aria-hidden="true">
+        <div class="graphic-box box-back"></div>
+        <div class="graphic-box box-middle"></div>
+        <div class="graphic-box box-front"><span>✓</span></div>
+        <span class="graphic-spark spark-a">✳</span>
+        <span class="graphic-spark spark-b">✦</span>
+      </div>
+    </section>
+
+    <section class="metrics-grid" aria-label="Inventory summary">
+      <article class="metric-card metric-products">
+        <div class="metric-top"><span>Products</span><span class="metric-icon" aria-hidden="true">▦</span></div>
+        <p class="metric-value" id="products-count">0</p>
+        <p class="metric-note">Unique items in your catalog</p>
+      </article>
+      <article class="metric-card metric-units">
+        <div class="metric-top"><span>Units in stock</span><span class="metric-icon" aria-hidden="true">□</span></div>
+        <p class="metric-value" id="units-count">0</p>
+        <p class="metric-note">Across all products</p>
+      </article>
+      <article class="metric-card metric-value-card">
+        <div class="metric-top"><span>Stock value</span><span class="metric-icon" aria-hidden="true">◈</span></div>
+        <p class="metric-value" id="stock-value">0</p>
+        <p class="metric-note">Quantity × unit cost</p>
+      </article>
+      <article class="metric-card metric-alerts">
+        <div class="metric-top"><span>Needs attention</span><span class="metric-icon" aria-hidden="true">!</span></div>
+        <p class="metric-value" id="attention-count">0</p>
+        <p class="metric-note">Low or out of stock</p>
+      </article>
+    </section>
+
+    <section class="work-area" aria-label="Manage inventory">
+      <aside class="form-panel" aria-labelledby="form-heading">
+        <div class="panel-heading">
+          <span class="section-kicker">PRODUCT CATALOG</span>
+          <h2 id="form-heading">Add a product</h2>
+          <p>Record a product and keep its stock count up to date.</p>
+        </div>
+
+        <form id="product-form">
+          <label for="product-name">Product name <span class="required">*</span></label>
+          <input id="product-name" name="name" type="text" maxlength="100" placeholder="e.g. A4 copy paper" required autocomplete="off">
+
+          <div class="form-two-col">
+            <div>
+              <label for="product-sku">SKU / Code <span class="optional">OPTIONAL</span></label>
+              <input id="product-sku" name="sku" type="text" maxlength="40" placeholder="PAP-001" autocomplete="off">
+            </div>
+            <div>
+              <label for="product-category">Category</label>
+              <select id="product-category" name="category">
+                <option value="Stationery">Stationery</option>
+                <option value="Groceries">Groceries</option>
+                <option value="Electronics">Electronics</option>
+                <option value="Clothing">Clothing</option>
+                <option value="Household">Household</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-two-col">
+            <div>
+              <label for="product-cost">Unit cost (MMK)</label>
+              <input id="product-cost" name="cost" type="number" min="0" max="999999999" step="0.01" value="0" required inputmode="decimal">
+            </div>
+            <div>
+              <label for="product-quantity">Quantity</label>
+              <input id="product-quantity" name="quantity" type="number" min="0" max="999999999" step="1" value="0" required inputmode="numeric">
+            </div>
+          </div>
+
+          <label for="product-reorder">Low-stock threshold</label>
+          <input id="product-reorder" name="reorderLevel" type="number" min="0" max="999999999" step="1" value="5" required inputmode="numeric">
+          <p class="field-hint">A product is flagged when its quantity reaches this number or lower.</p>
+          <p class="field-error" id="form-error" role="alert" hidden></p>
+
+          <div class="form-actions">
+            <button class="button button-primary" id="save-product" type="submit"><span aria-hidden="true">＋</span> Add product</button>
+            <button class="button button-secondary" id="cancel-edit" type="button" hidden>Cancel</button>
+          </div>
+          <p class="form-status" id="form-status" aria-live="polite"></p>
+        </form>
+
+        <div class="privacy-note">
+          <span class="privacy-icon" aria-hidden="true">⌂</span>
+          <p><strong>Local-first by design</strong><br>Your catalog stays in this browser. Export a CSV backup when needed.</p>
+        </div>
+      </aside>
+
+      <section class="inventory-panel" aria-labelledby="inventory-heading">
+        <div class="inventory-heading-row">
+          <div>
+            <span class="section-kicker">YOUR STOCKROOM</span>
+            <h2 id="inventory-heading">Inventory <span class="heading-count" id="visible-count">0</span></h2>
+          </div>
+          <label class="sort-label" for="sort-products">Sort by
+            <select id="sort-products">
+              <option value="name">Product name</option>
+              <option value="stock-asc">Lowest stock</option>
+              <option value="value-desc">Highest stock value</option>
+              <option value="recent">Recently added</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="search-row">
+          <span class="search-icon" aria-hidden="true">⌕</span>
+          <label class="visually-hidden" for="product-search">Search inventory</label>
+          <input id="product-search" type="search" placeholder="Search product, SKU or category…" autocomplete="off">
+          <kbd aria-hidden="true">/</kbd>
+        </div>
+
+        <div class="toolbar-row">
+          <div class="filter-tabs" role="group" aria-label="Filter inventory">
+            <button class="filter-tab is-active" type="button" data-filter="all" aria-pressed="true">All <span id="all-count">0</span></button>
+            <button class="filter-tab" type="button" data-filter="low" aria-pressed="false">Low stock <span id="low-count">0</span></button>
+            <button class="filter-tab" type="button" data-filter="out" aria-pressed="false">Out of stock <span id="out-count">0</span></button>
+          </div>
+          <label class="category-filter" for="category-filter">
+            <span class="visually-hidden">Filter by category</span>
+            <select id="category-filter">
+              <option value="all">All categories</option>
+              <option value="Stationery">Stationery</option>
+              <option value="Groceries">Groceries</option>
+              <option value="Electronics">Electronics</option>
+              <option value="Clothing">Clothing</option>
+              <option value="Household">Household</option>
+              <option value="Other">Other</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="inventory-list" id="inventory-list" aria-label="Product inventory"></div>
+        <div class="empty-state" id="empty-state">
+          <div class="empty-icon" aria-hidden="true">▦</div>
+          <h3 id="empty-title">A clear shelf to start.</h3>
+          <p id="empty-description">Add your first product to begin keeping track of stock.</p>
+          <button type="button" class="text-button" id="empty-action">Add a product <span aria-hidden="true">↗</span></button>
+        </div>
+        <p class="inventory-footer" id="inventory-footer">Your catalog is ready when you are.</p>
+      </section>
+    </section>
+
+    <section class="stock-note" aria-label="How stock status works">
+      <span class="note-symbol" aria-hidden="true">i</span>
+      <p><strong>Stock status guide</strong> <span class="stock-guide"><span class="status-pill status-ok">In stock</span> Above threshold</span> <span class="stock-guide"><span class="status-pill status-low">Low stock</span> At or below threshold</span> <span class="stock-guide"><span class="status-pill status-out">Out of stock</span> Quantity is zero</span></p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <span>STOCKWISE <span class="footer-dot">•</span> A SMALL-SHOP INVENTORY DEMO</span>
+    <a href="https://github.com/wdf-5618/stockwise-inventory-manager" target="_blank" rel="noreferrer">View source <span aria-hidden="true">↗</span></a>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
