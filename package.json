@@ -1,0 +1,13 @@
+{
+  "name": "stockwise-inventory-manager",
+  "version": "2.1.0",
+  "private": true,
+  "description": "Small-shop inventory manager with a local SQLite persistence API.",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check app.js"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}
