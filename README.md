@@ -2,6 +2,8 @@
 
 Stockwise is a small-shop inventory app built with HTML, CSS, and vanilla JavaScript. It helps a shop keep a product catalog, review stock levels, record stock movements, and exchange inventory data through CSV.
 
+**Live demo (browser-only mode):** [Open Stockwise](https://stockwise-inventory-manager-six.vercel.app). The hosted demo uses browser storage; run the local Node.js server to use SQLite persistence.
+
 ## Features
 
 - Create, edit, and delete products with name, optional SKU, category, cost in Myanmar kyat (MMK), quantity, and low-stock threshold.
